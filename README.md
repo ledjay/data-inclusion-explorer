@@ -1,1 +1,1 @@
-# data-inclusion-expolrer
+# Data Inclusion Explorer
