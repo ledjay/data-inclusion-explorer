@@ -8,7 +8,11 @@ interface ServiceCardProps {
 
 export function ServiceCard({ service, distance }: ServiceCardProps) {
   return (
-    <Link href={`/services/${service.id}`} target="_blank" rel="noopener noreferrer">
+    <Link
+      href={`/services/${service.id}`}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
       <div className="border border-gray-200 dark:border-gray-800 rounded-lg p-6 hover:shadow-lg transition-shadow cursor-pointer">
         <div className="flex justify-between items-center mb-2">
           <span className=" text-sm text-gray-500   inline-block">
@@ -21,6 +25,16 @@ export function ServiceCard({ service, distance }: ServiceCardProps) {
           <p className="text-gray-700 dark:text-gray-300 mb-2 line-clamp-3">
             {service.description}
           </p>
+        )}
+        {service.score_qualite !== undefined && (
+          <div className="flex items-center ">
+            <span className="text-xs text-gray-500">
+              Score de qualité &nbsp;
+            </span>
+            <span className="text-sm font-medium">
+              {service.score_qualite.toFixed(2)}
+            </span>
+          </div>
         )}
       </div>
     </Link>

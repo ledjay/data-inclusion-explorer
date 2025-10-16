@@ -19,8 +19,19 @@ import {
   PopoverTrigger,
 } from "~/components/ui/popover";
 import { Slider } from "~/components/ui/slider";
+import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
+import { Label } from "~/components/ui/label";
 import { Source } from "~/types/source";
 import { Commune } from "~/types/commune";
+
+const TYPES = [
+  { value: "accompagnement", label: "Accompagnement" },
+  { value: "aide-financiere", label: "Aide financière" },
+  { value: "aide-materielle", label: "Aide matérielle" },
+  { value: "atelier", label: "Atelier" },
+  { value: "formation", label: "Formation" },
+  { value: "information", label: "Information" },
+];
 
 export default function ServiceFilters() {
   const router = useRouter();
@@ -32,13 +43,16 @@ export default function ServiceFilters() {
   const [loadingCommunes, setLoadingCommunes] = useState(false);
   const [open, setOpen] = useState(false);
   const [openCommune, setOpenCommune] = useState(false);
+  const [openType, setOpenType] = useState(false);
   const [communeSearch, setCommuneSearch] = useState("");
   const [qualityScore, setQualityScore] = useState<number[]>([
     Number(searchParams.get("score_qualite_minimum")) || 0,
   ]);
 
   const currentSource = searchParams.get("sources") || "all";
+  const currentType = searchParams.get("types") || "all";
   const currentCommune = searchParams.get("code_commune") || "";
+  const currentFrais = searchParams.get("frais") || "all";
 
   useEffect(() => {
     async function fetchSources() {
@@ -86,6 +100,13 @@ export default function ServiceFilters() {
 
   // Debounce pour le score de qualité
   useEffect(() => {
+    const currentScore = Number(searchParams.get("score_qualite_minimum")) || 0;
+
+    // Ne rien faire si le score n'a pas changé
+    if (qualityScore[0] === currentScore) {
+      return;
+    }
+
     const timer = setTimeout(() => {
       const params = new URLSearchParams(searchParams.toString());
 
@@ -111,6 +132,36 @@ export default function ServiceFilters() {
       params.delete("sources");
     } else {
       params.set("sources", value);
+    }
+
+    // Réinitialiser à la page 1 lors du changement de filtre
+    params.delete("page");
+
+    router.push(`/?${params.toString()}`);
+  };
+
+  const handleTypeChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (value === "all") {
+      params.delete("types");
+    } else {
+      params.set("types", value);
+    }
+
+    // Réinitialiser à la page 1 lors du changement de filtre
+    params.delete("page");
+
+    router.push(`/?${params.toString()}`);
+  };
+
+  const handleFraisChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (value === "all") {
+      params.delete("frais");
+    } else {
+      params.set("frais", value);
     }
 
     // Réinitialiser à la page 1 lors du changement de filtre
@@ -219,6 +270,104 @@ export default function ServiceFilters() {
               Réinitialiser
             </button>
           )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">Type</label>
+          <Popover open={openType} onOpenChange={setOpenType}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={openType}
+                className="w-full justify-between"
+              >
+                {currentType === "all"
+                  ? "Tous les types"
+                  : TYPES.find((type) => type.value === currentType)?.label ||
+                    "Sélectionner un type"}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-full p-0">
+              <Command>
+                <CommandInput placeholder="Rechercher un type..." />
+                <CommandList>
+                  <CommandEmpty>Aucun type trouvé.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      value="all"
+                      onSelect={() => {
+                        handleTypeChange("all");
+                        setOpenType(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          currentType === "all" ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      Tous les types
+                    </CommandItem>
+                    {TYPES.map((type) => (
+                      <CommandItem
+                        key={type.value}
+                        value={type.value}
+                        onSelect={(value) => {
+                          handleTypeChange(value);
+                          setOpenType(false);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            currentType === type.value
+                              ? "opacity-100"
+                              : "opacity-0"
+                          )}
+                        />
+                        {type.label}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          {currentType !== "all" && (
+            <button
+              type="button"
+              onClick={() => handleTypeChange("all")}
+              className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mt-1"
+            >
+              Réinitialiser
+            </button>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">Frais</label>
+          <RadioGroup value={currentFrais} onValueChange={handleFraisChange}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="all" id="frais-all" />
+              <Label htmlFor="frais-all" className="cursor-pointer">
+                Tous
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="gratuit" id="frais-gratuit" />
+              <Label htmlFor="frais-gratuit" className="cursor-pointer">
+                Gratuit
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="payant" id="frais-payant" />
+              <Label htmlFor="frais-payant" className="cursor-pointer">
+                Payant
+              </Label>
+            </div>
+          </RadioGroup>
         </div>
 
         <div>
