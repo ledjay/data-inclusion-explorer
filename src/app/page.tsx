@@ -1,103 +1,196 @@
-import Image from "next/image";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "~/components/ui/pagination";
+import { ServiceCard } from "~/components/ServiceCard";
+import { ApiResponse } from "~/types/service";
+import ServiceFilters from "~/components/ServiceFilters";
 
-export default function Home() {
+const ITEMS_PER_PAGE = 50;
+const API_BASE_URL = "https://api-staging.data.inclusion.beta.gouv.fr/api/v1";
+
+async function getServices(
+  page: number,
+  source?: string,
+  scoreQualite?: string,
+  codeCommune?: string
+) {
+  const params = new URLSearchParams({
+    page: page.toString(),
+    size: ITEMS_PER_PAGE.toString(),
+  });
+
+  if (source) {
+    params.set("sources", source);
+  }
+
+  if (scoreQualite) {
+    params.set("score_qualite_minimum", scoreQualite);
+  }
+
+  if (codeCommune) {
+    params.set("code_commune", codeCommune);
+  }
+
+  const url = `${API_BASE_URL}/search/services?${params.toString()}`;
+
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Erreur lors de la récupération des données");
+    }
+
+    const data: ApiResponse = await response.json();
+    return { data, error: null };
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error.message : "Une erreur est survenue",
+    };
+  }
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    page?: string;
+    sources?: string;
+    score_qualite_minimum?: string;
+    code_commune?: string;
+  }>;
+}) {
+  const params = await searchParams;
+  const currentPage = Number(params.page) || 1;
+  const sourceFilter = params.sources;
+  const scoreQualite = params.score_qualite_minimum;
+  const codeCommune = params.code_commune;
+
+  const { data, error } = await getServices(
+    currentPage,
+    sourceFilter,
+    scoreQualite,
+    codeCommune
+  );
+  const services = data?.items || [];
+  const total = data?.total || 0;
+  const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+
+  // Helper pour générer les URLs de pagination avec les filtres
+  const buildPageUrl = (page: number) => {
+    const urlParams = new URLSearchParams();
+    if (page > 1) urlParams.set("page", page.toString());
+    if (sourceFilter) urlParams.set("sources", sourceFilter);
+    if (scoreQualite) urlParams.set("score_qualite_minimum", scoreQualite);
+    if (codeCommune) urlParams.set("code_commune", codeCommune);
+    const query = urlParams.toString();
+    return query ? `/?${query}` : "/";
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="min-h-screen p-8 pb-20 sm:p-20">
+      <main className="mx-auto grid grid-cols-4 gap-10 ">
+        <ServiceFilters />
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+        {error && (
+          <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
+            {error}
+          </div>
+        )}
+
+        {!error && (
+          <div className="col-span-3">
+            <div className="space-y-6 ">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                {total} service{total > 1 ? "s" : ""} au total - Page{" "}
+                {currentPage} sur {totalPages}
+              </p>
+
+              <div className="grid grid-cols-2 gap-4">
+                {services.map((item) => (
+                  <ServiceCard
+                    key={item.service.id}
+                    service={item.service}
+                    distance={item.distance}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {totalPages > 1 && (
+              <Pagination className="mt-8">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href={
+                        currentPage > 1 ? buildPageUrl(currentPage - 1) : "#"
+                      }
+                      className={
+                        currentPage === 1
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                      }
+                    />
+                  </PaginationItem>
+
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNumber;
+                    if (totalPages <= 5) {
+                      pageNumber = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNumber = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNumber = totalPages - 4 + i;
+                    } else {
+                      pageNumber = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <PaginationItem key={pageNumber}>
+                        <PaginationLink
+                          href={buildPageUrl(pageNumber)}
+                          isActive={currentPage === pageNumber}
+                        >
+                          {pageNumber}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
+
+                  {totalPages > 5 && currentPage < totalPages - 2 && (
+                    <PaginationItem>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  )}
+
+                  <PaginationItem>
+                    <PaginationNext
+                      href={
+                        currentPage < totalPages
+                          ? buildPageUrl(currentPage + 1)
+                          : "#"
+                      }
+                      className={
+                        currentPage === totalPages
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                      }
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
+          </div>
+        )}
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
