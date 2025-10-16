@@ -18,7 +18,9 @@ async function getServices(
   page: number,
   source?: string,
   scoreQualite?: string,
-  codeCommune?: string
+  codeCommune?: string,
+  types?: string,
+  frais?: string
 ) {
   const params = new URLSearchParams({
     page: page.toString(),
@@ -35,6 +37,14 @@ async function getServices(
 
   if (codeCommune) {
     params.set("code_commune", codeCommune);
+  }
+
+  if (types) {
+    params.set("types", types);
+  }
+
+  if (frais && frais !== "all") {
+    params.set("frais", frais);
   }
 
   const url = `${API_BASE_URL}/search/services?${params.toString()}`;
@@ -66,6 +76,8 @@ export default async function Home({
     sources?: string;
     score_qualite_minimum?: string;
     code_commune?: string;
+    types?: string;
+    frais?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -73,12 +85,16 @@ export default async function Home({
   const sourceFilter = params.sources;
   const scoreQualite = params.score_qualite_minimum;
   const codeCommune = params.code_commune;
+  const typesFilter = params.types;
+  const fraisFilter = params.frais;
 
   const { data, error } = await getServices(
     currentPage,
     sourceFilter,
     scoreQualite,
-    codeCommune
+    codeCommune,
+    typesFilter,
+    fraisFilter
   );
   const services = data?.items || [];
   const total = data?.total || 0;
@@ -91,6 +107,8 @@ export default async function Home({
     if (sourceFilter) urlParams.set("sources", sourceFilter);
     if (scoreQualite) urlParams.set("score_qualite_minimum", scoreQualite);
     if (codeCommune) urlParams.set("code_commune", codeCommune);
+    if (typesFilter) urlParams.set("types", typesFilter);
+    if (fraisFilter) urlParams.set("frais", fraisFilter);
     const query = urlParams.toString();
     return query ? `/?${query}` : "/";
   };
