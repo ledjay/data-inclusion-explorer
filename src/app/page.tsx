@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Pagination,
@@ -19,7 +19,7 @@ import { ServiceDetailPanel } from "~/components/ServiceDetailPanel";
 const ITEMS_PER_PAGE = 50;
 const API_BASE_URL = "https://api-staging.data.inclusion.beta.gouv.fr/api/v1";
 
-export default function Home() {
+function HomeContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -278,5 +278,19 @@ export default function Home() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-screen w-screen flex items-center justify-center">
+          Chargement...
+        </div>
+      }
+    >
+      <HomeContent />
+    </Suspense>
   );
 }
