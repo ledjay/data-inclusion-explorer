@@ -1,3 +1,7 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Pagination,
   PaginationContent,
@@ -10,95 +14,95 @@ import {
 import { ServiceCard } from "~/components/ServiceCard";
 import { ApiResponse } from "~/types/service";
 import ServiceFilters from "~/components/ServiceFilters";
+import { ServiceDetailPanel } from "~/components/ServiceDetailPanel";
 
 const ITEMS_PER_PAGE = 50;
 const API_BASE_URL = "https://api-staging.data.inclusion.beta.gouv.fr/api/v1";
 
-async function getServices(
-  page: number,
-  source?: string,
-  scoreQualite?: string,
-  codeCommune?: string,
-  types?: string,
-  frais?: string
-) {
-  const params = new URLSearchParams({
-    page: page.toString(),
-    size: ITEMS_PER_PAGE.toString(),
-  });
+export default function Home() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
-  if (source) {
-    params.set("sources", source);
-  }
+  // Panel state
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(
+    null
+  );
 
-  if (scoreQualite) {
-    params.set("score_qualite_minimum", scoreQualite);
-  }
+  // Data state
+  const [services, setServices] = useState<ApiResponse["items"]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (codeCommune) {
-    params.set("code_commune", codeCommune);
-  }
+  // Get current filters from URL
+  const currentPage = Number(searchParams.get("page")) || 1;
+  const sourceFilter = searchParams.get("sources") || undefined;
+  const scoreQualite = searchParams.get("score_qualite_minimum") || undefined;
+  const codeCommune = searchParams.get("code_commune") || undefined;
+  const typesFilter = searchParams.get("types") || undefined;
+  const fraisFilter = searchParams.get("frais") || undefined;
 
-  if (types) {
-    params.set("types", types);
-  }
+  const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
 
-  if (frais && frais !== "all") {
-    params.set("frais", frais);
-  }
+  // Fetch services when filters change
+  useEffect(() => {
+    async function fetchServices() {
+      setLoading(true);
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        size: ITEMS_PER_PAGE.toString(),
+      });
 
-  const url = `${API_BASE_URL}/search/services?${params.toString()}`;
+      if (sourceFilter) params.set("sources", sourceFilter);
+      if (scoreQualite) params.set("score_qualite_minimum", scoreQualite);
+      if (codeCommune) params.set("code_commune", codeCommune);
+      if (typesFilter) params.set("types", typesFilter);
+      if (fraisFilter && fraisFilter !== "all")
+        params.set("frais", fraisFilter);
 
-  try {
-    const response = await fetch(url, {
-      cache: "no-store",
-    });
+      const url = `${API_BASE_URL}/search/services?${params.toString()}`;
 
-    if (!response.ok) {
-      throw new Error("Erreur lors de la récupération des données");
+      try {
+        const response = await fetch(url, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Erreur lors de la récupération des données");
+        }
+
+        const data: ApiResponse = await response.json();
+        setServices(data.items);
+        setTotal(data.total);
+        setError(null);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Une erreur est survenue"
+        );
+        setServices([]);
+        setTotal(0);
+      } finally {
+        setLoading(false);
+      }
     }
 
-    const data: ApiResponse = await response.json();
-    return { data, error: null };
-  } catch (error) {
-    return {
-      data: null,
-      error: error instanceof Error ? error.message : "Une erreur est survenue",
-    };
-  }
-}
-
-export default async function Home({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    page?: string;
-    sources?: string;
-    score_qualite_minimum?: string;
-    code_commune?: string;
-    types?: string;
-    frais?: string;
-  }>;
-}) {
-  const params = await searchParams;
-  const currentPage = Number(params.page) || 1;
-  const sourceFilter = params.sources;
-  const scoreQualite = params.score_qualite_minimum;
-  const codeCommune = params.code_commune;
-  const typesFilter = params.types;
-  const fraisFilter = params.frais;
-
-  const { data, error } = await getServices(
+    fetchServices();
+  }, [
     currentPage,
     sourceFilter,
     scoreQualite,
     codeCommune,
     typesFilter,
-    fraisFilter
-  );
-  const services = data?.items || [];
-  const total = data?.total || 0;
-  const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+    fraisFilter,
+  ]);
+
+  // Sync panel state with URL
+  useEffect(() => {
+    const serviceParam = searchParams.get("service");
+    if (serviceParam) {
+      setSelectedServiceId(serviceParam);
+    }
+  }, [searchParams]);
 
   // Helper pour générer les URLs de pagination avec les filtres
   const buildPageUrl = (page: number) => {
@@ -113,99 +117,163 @@ export default async function Home({
     return query ? `/?${query}` : "/";
   };
 
+  // Handle card click - open panel and update URL
+  const handleCardClick = (serviceId: string) => {
+    setSelectedServiceId(serviceId);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("service", serviceId);
+    router.push(`/?${params.toString()}`, { scroll: false });
+  };
+
+  // Handle panel close - clear selection and remove from URL
+  const handlePanelClose = () => {
+    setSelectedServiceId(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("service");
+    const query = params.toString();
+    router.push(query ? `/?${query}` : "/", { scroll: false });
+  };
+
   return (
-    <div className="min-h-screen p-8 pb-20 sm:p-20">
-      <main className="mx-auto grid grid-cols-4 gap-10 ">
-        <ServiceFilters />
+    <div className="h-screen w-screen overflow-hidden">
+      <main
+        className={`grid gap-4 h-full w-full transition-all duration-300 ${
+          selectedServiceId
+            ? "grid-cols-1 md:grid-cols-[1fr_1fr_2fr]"
+            : "grid-cols-1 md:grid-cols-[1fr_3fr]"
+        }`}
+      >
+        {/* Filter bar - fixed 25% width */}
+        <div
+          className={`overflow-y-auto min-w-0 p-4 border-r ${
+            selectedServiceId ? "hidden md:block" : ""
+          }`}
+        >
+          <ServiceFilters />
+        </div>
 
-        {error && (
-          <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
-
-        {!error && (
-          <div className="col-span-3">
-            <div className="space-y-6 ">
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                {total} service{total > 1 ? "s" : ""} au total - Page{" "}
-                {currentPage} sur {totalPages}
-              </p>
-
-              <div className="grid grid-cols-2 gap-4">
-                {services.map((item) => (
-                  <ServiceCard
-                    key={item.service.id}
-                    service={item.service}
-                    distance={item.distance}
-                  />
-                ))}
-              </div>
+        {/* Card list - flexible width */}
+        <div
+          className={`overflow-y-auto min-w-0 p-4 ${
+            selectedServiceId ? "hidden md:block" : ""
+          }`}
+        >
+          {error && (
+            <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
+              {error}
             </div>
+          )}
 
-            {totalPages > 1 && (
-              <Pagination className="mt-8">
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      href={
-                        currentPage > 1 ? buildPageUrl(currentPage - 1) : "#"
-                      }
-                      className={
-                        currentPage === 1
-                          ? "pointer-events-none opacity-50"
-                          : ""
-                      }
-                    />
-                  </PaginationItem>
+          {!error && (
+            <>
+              <div className="min-w-0">
+                {loading ? (
+                  <div className="flex items-center justify-center h-64">
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Chargement...
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-gray-600 dark:text-gray-400 mb-4">
+                      {total} service{total > 1 ? "s" : ""} au total - Page{" "}
+                      {currentPage} sur {totalPages}
+                    </p>
 
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNumber;
-                    if (totalPages <= 5) {
-                      pageNumber = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNumber = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNumber = totalPages - 4 + i;
-                    } else {
-                      pageNumber = currentPage - 2 + i;
-                    }
+                    <div
+                      className={`grid gap-4 w-full min-w-0 ${
+                        selectedServiceId ? "grid-cols-1" : "grid-cols-2"
+                      }`}
+                    >
+                      {services.map((item) => (
+                        <ServiceCard
+                          key={item.service.id}
+                          service={item.service}
+                          distance={item.distance}
+                          onClick={handleCardClick}
+                          isSelected={selectedServiceId === item.service.id}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
 
-                    return (
-                      <PaginationItem key={pageNumber}>
-                        <PaginationLink
-                          href={buildPageUrl(pageNumber)}
-                          isActive={currentPage === pageNumber}
-                        >
-                          {pageNumber}
-                        </PaginationLink>
-                      </PaginationItem>
-                    );
-                  })}
-
-                  {totalPages > 5 && currentPage < totalPages - 2 && (
+              {totalPages > 1 && (
+                <Pagination className="mt-8 w-full min-w-0">
+                  <PaginationContent>
                     <PaginationItem>
-                      <PaginationEllipsis />
+                      <PaginationPrevious
+                        href={
+                          currentPage > 1 ? buildPageUrl(currentPage - 1) : "#"
+                        }
+                        className={
+                          currentPage === 1
+                            ? "pointer-events-none opacity-50"
+                            : ""
+                        }
+                      />
                     </PaginationItem>
-                  )}
 
-                  <PaginationItem>
-                    <PaginationNext
-                      href={
-                        currentPage < totalPages
-                          ? buildPageUrl(currentPage + 1)
-                          : "#"
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNumber;
+                      if (totalPages <= 5) {
+                        pageNumber = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNumber = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNumber = totalPages - 4 + i;
+                      } else {
+                        pageNumber = currentPage - 2 + i;
                       }
-                      className={
-                        currentPage === totalPages
-                          ? "pointer-events-none opacity-50"
-                          : ""
-                      }
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            )}
+
+                      return (
+                        <PaginationItem key={pageNumber}>
+                          <PaginationLink
+                            href={buildPageUrl(pageNumber)}
+                            isActive={currentPage === pageNumber}
+                          >
+                            {pageNumber}
+                          </PaginationLink>
+                        </PaginationItem>
+                      );
+                    })}
+
+                    {totalPages > 5 && currentPage < totalPages - 2 && (
+                      <PaginationItem>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    )}
+
+                    <PaginationItem>
+                      <PaginationNext
+                        href={
+                          currentPage < totalPages
+                            ? buildPageUrl(currentPage + 1)
+                            : "#"
+                        }
+                        className={
+                          currentPage === totalPages
+                            ? "pointer-events-none opacity-50"
+                            : ""
+                        }
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Side panel - 50% width when open */}
+        {selectedServiceId && (
+          <div className="contents">
+            <ServiceDetailPanel
+              serviceId={selectedServiceId}
+              isOpen={selectedServiceId !== null}
+              onClose={handlePanelClose}
+            />
           </div>
         )}
       </main>
