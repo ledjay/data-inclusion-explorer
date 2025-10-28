@@ -15,6 +15,15 @@ import { ServiceCard } from "~/components/ServiceCard";
 import { ApiResponse } from "~/types/service";
 import ServiceFilters from "~/components/ServiceFilters";
 import { ServiceDetailPanel } from "~/components/ServiceDetailPanel";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "~/components/ui/sheet";
+import { Button } from "~/components/ui/button";
+import { Filter } from "lucide-react";
 
 const ITEMS_PER_PAGE = 50;
 const API_BASE_URL = "https://api-staging.data.inclusion.beta.gouv.fr/api/v1";
@@ -27,6 +36,7 @@ function HomeContent() {
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(
     null
   );
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Data state
   const [services, setServices] = useState<ApiResponse["items"]>([]);
@@ -143,14 +153,51 @@ function HomeContent() {
             : "grid-cols-1 md:grid-cols-[1fr_3fr]"
         }`}
       >
-        {/* Filter bar - fixed 25% width */}
+        {/* Filter bar - desktop only */}
         <div
-          className={`overflow-y-auto min-w-0 p-4 border-r ${
-            selectedServiceId ? "hidden md:block" : ""
+          className={`hidden md:block overflow-y-auto min-w-0 p-4 border-r ${
+            selectedServiceId ? "md:hidden lg:block" : ""
           }`}
         >
-          <ServiceFilters />
+          <Suspense
+            fallback={
+              <div className="sticky top-8 self-start space-y-6">
+                <div className="p-3 bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-md">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Loading filters...
+                  </p>
+                </div>
+              </div>
+            }
+          >
+            <ServiceFilters />
+          </Suspense>
         </div>
+
+        {/* Mobile filter drawer */}
+        <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+          <SheetContent side="left" className="w-[300px] sm:w-[400px] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Filters</SheetTitle>
+              <SheetDescription>
+                Refine your search with the filters below
+              </SheetDescription>
+            </SheetHeader>
+            <div className="mt-4">
+              <Suspense
+                fallback={
+                  <div className="p-3 bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-md">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Loading filters...
+                    </p>
+                  </div>
+                }
+              >
+                <ServiceFilters />
+              </Suspense>
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {/* Card list - flexible width */}
         <div
@@ -158,6 +205,18 @@ function HomeContent() {
             selectedServiceId ? "hidden md:block" : ""
           }`}
         >
+          {/* Mobile filter button */}
+          <div className="md:hidden mb-4">
+            <Button
+              variant="outline"
+              onClick={() => setMobileFiltersOpen(true)}
+              className="w-full"
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              Show Filters
+            </Button>
+          </div>
+
           {error && (
             <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
               {error}
