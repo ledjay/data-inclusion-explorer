@@ -51,6 +51,8 @@ function HomeContent() {
   const codeCommune = searchParams.get("code_commune") || undefined;
   const typesFilter = searchParams.get("types") || undefined;
   const fraisFilter = searchParams.get("frais") || undefined;
+  const modesAccueilFilter = searchParams.get("modes_accueil") || undefined;
+  const publicsFilter = searchParams.get("publics") || undefined;
 
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
 
@@ -69,6 +71,9 @@ function HomeContent() {
       if (typesFilter) params.set("types", typesFilter);
       if (fraisFilter && fraisFilter !== "all")
         params.set("frais", fraisFilter);
+      if (modesAccueilFilter && modesAccueilFilter !== "all")
+        params.set("modes_accueil", modesAccueilFilter);
+      if (publicsFilter) params.set("publics", publicsFilter);
 
       const url = `${API_BASE_URL}/search/services?${params.toString()}`;
 
@@ -104,6 +109,8 @@ function HomeContent() {
     codeCommune,
     typesFilter,
     fraisFilter,
+    modesAccueilFilter,
+    publicsFilter,
   ]);
 
   // Sync panel state with URL
@@ -123,6 +130,8 @@ function HomeContent() {
     if (codeCommune) urlParams.set("code_commune", codeCommune);
     if (typesFilter) urlParams.set("types", typesFilter);
     if (fraisFilter) urlParams.set("frais", fraisFilter);
+    if (modesAccueilFilter) urlParams.set("modes_accueil", modesAccueilFilter);
+    if (publicsFilter) urlParams.set("publics", publicsFilter);
     const query = urlParams.toString();
     return query ? `/?${query}` : "/";
   };

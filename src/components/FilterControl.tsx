@@ -62,6 +62,7 @@ function CategoricalFilterControl({
   onSearch,
   loading,
 }: Omit<FilterControlProps, "error">) {
+  // Initialize hooks unconditionally (required by React)
   const [open, setOpen] = React.useState(false);
   const [searchInput, setSearchInput] = React.useState("");
 
@@ -80,6 +81,53 @@ function CategoricalFilterControl({
       return () => clearTimeout(timer);
     }
   }, [searchInput, onSearch, filter.id]);
+
+  // Check if this filter should use radio buttons (2 options only)
+  const shouldUseRadioButtons = filter.options?.length === 2;
+
+  // Radio button rendering for 2-option filters
+  if (shouldUseRadioButtons) {
+    // Ensure value is a string for RadioGroup comparison
+    const radioValue = value === null || value === undefined ? "all" : String(value);
+
+    const handleRadioChange = (val: string) => {
+      if (val === "all") {
+        onClear();
+      } else {
+        // Pass the value directly to onChange
+        onChange(val);
+      }
+    };
+
+    return (
+      <div className="space-y-2">
+        <RadioGroup
+          value={radioValue}
+          onValueChange={handleRadioChange}
+        >
+          {/* "All" option to clear the filter */}
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="all" id={`${filter.id}-all`} />
+            <Label htmlFor={`${filter.id}-all`} className="cursor-pointer">
+              Tous
+            </Label>
+          </div>
+
+          {/* Render each filter option */}
+          {filter.options?.map((option) => (
+            <div key={option.value} className="flex items-center space-x-2">
+              <RadioGroupItem value={option.value} id={`${filter.id}-${option.value}`} />
+              <Label htmlFor={`${filter.id}-${option.value}`} className="cursor-pointer">
+                {option.label}
+              </Label>
+            </div>
+          ))}
+        </RadioGroup>
+      </div>
+    );
+  }
+
+  // Existing dropdown code for filters with 3+ options
 
   return (
     <div className="space-y-2">
