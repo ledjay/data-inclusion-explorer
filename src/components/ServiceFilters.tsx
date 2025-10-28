@@ -1,476 +1,260 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "~/lib/utils";
-import { Button } from "~/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "~/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/components/ui/popover";
-import { Slider } from "~/components/ui/slider";
-import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
-import { Label } from "~/components/ui/label";
-import { Source } from "~/types/source";
-import { Commune } from "~/types/commune";
+/**
+ * ServiceFilters Component
+ * Main filter sidebar for the Data Inclusion Explorer
+ * Displays all available filters organized by category
+ */
 
-const TYPES = [
-  { value: "accompagnement", label: "Accompagnement" },
-  { value: "aide-financiere", label: "Aide financière" },
-  { value: "aide-materielle", label: "Aide matérielle" },
-  { value: "atelier", label: "Atelier" },
-  { value: "formation", label: "Formation" },
-  { value: "information", label: "Information" },
-];
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ALL_FILTERS, FILTER_MAP } from "~/config/filters.config";
+import { FilterControl } from "~/components/FilterControl";
+import {
+  urlParamsToFilterState,
+  filterStateToUrlParams,
+} from "~/lib/filter-utils";
+import { Button } from "~/components/ui/button";
 
 export default function ServiceFilters() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [sources, setSources] = useState<Source[]>([]);
-  const [communes, setCommunes] = useState<Commune[]>([]);
-  const [selectedCommune, setSelectedCommune] = useState<Commune | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingCommunes, setLoadingCommunes] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [openCommune, setOpenCommune] = useState(false);
-  const [openType, setOpenType] = useState(false);
-  const [communeSearch, setCommuneSearch] = useState("");
-  const [qualityScore, setQualityScore] = useState<number[]>([
-    Number(searchParams.get("score_qualite_minimum")) || 0,
-  ]);
+  const [filterState, setFilterState] = useState<
+    Record<string, string | number | boolean | null>
+  >({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filterOptions, setFilterOptions] = useState<
+    Record<string, Array<{ value: string; label: string; available: boolean }>>
+  >({});
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const currentSource = searchParams.get("sources") || "all";
-  const currentType = searchParams.get("types") || "all";
-  const currentCommune = searchParams.get("code_commune") || "";
-  const currentFrais = searchParams.get("frais") || "all";
-
+  // Fetch communes data from local API endpoint (initially top communes)
   useEffect(() => {
-    async function fetchSources() {
+    const fetchCommunes = async () => {
       try {
-        const response = await fetch("/api/sources");
-        if (response.ok) {
-          const data = await response.json();
-          setSources(data);
-        }
-      } catch (error) {
-        console.error("Erreur lors du chargement des sources:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
+        const response = await fetch("/api/communes");
+        const communes = (await response.json()) as Array<{
+          code: string;
+          nom: string;
+          codeRegion: string;
+        }>;
 
-    fetchSources();
+        const options = communes.map((commune) => ({
+          value: commune.code,
+          label: `${commune.nom} (${commune.codeRegion})`,
+          available: true,
+        }));
+
+        // Update state with initial communes
+        setFilterOptions((prev) => ({ ...prev, code_commune: options }));
+
+        // Also update FILTER_MAP for validation
+        const communesFilter = FILTER_MAP.get("code_commune");
+        if (communesFilter && communesFilter.options) {
+          communesFilter.options = options;
+        }
+      } catch (err) {
+        console.error("Failed to fetch communes:", err);
+      }
+    };
+
+    fetchCommunes();
   }, []);
 
-  // Charger les communes avec debounce sur la recherche
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (communeSearch.length >= 2) {
-        setLoadingCommunes(true);
-        try {
-          const response = await fetch(
-            `/api/communes?nom=${encodeURIComponent(communeSearch)}&limit=50`
-          );
-          if (response.ok) {
-            const data = await response.json();
-            setCommunes(data);
-          }
-        } catch (error) {
-          console.error("Erreur lors du chargement des communes:", error);
-        } finally {
-          setLoadingCommunes(false);
-        }
-      } else {
-        setCommunes([]);
-      }
-    }, 300);
+  // Handle communes search
+  const handleCommunesSearch = useCallback(async (searchTerm: string) => {
+    if (searchTerm.length < 2) {
+      // Reset to top communes if search is too short
+      const response = await fetch("/api/communes");
+      const communes = (await response.json()) as Array<{
+        code: string;
+        nom: string;
+        codeRegion: string;
+      }>;
 
-    return () => clearTimeout(timer);
-  }, [communeSearch]);
+      const options = communes.map((commune) => ({
+        value: commune.code,
+        label: `${commune.nom} (${commune.codeRegion})`,
+        available: true,
+      }));
 
-  // Debounce pour le score de qualité
-  useEffect(() => {
-    const currentScore = Number(searchParams.get("score_qualite_minimum")) || 0;
-
-    // Ne rien faire si le score n'a pas changé
-    if (qualityScore[0] === currentScore) {
+      setFilterOptions((prev) => ({ ...prev, code_commune: options }));
       return;
     }
 
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
+    try {
+      const response = await fetch(
+        `/api/communes?search=${encodeURIComponent(searchTerm)}`
+      );
+      const communes = (await response.json()) as Array<{
+        code: string;
+        nom: string;
+        codeRegion: string;
+      }>;
 
-      if (qualityScore[0] > 0) {
-        params.set("score_qualite_minimum", qualityScore[0].toString());
-      } else {
-        params.delete("score_qualite_minimum");
+      const options = communes.map((commune) => ({
+        value: commune.code,
+        label: `${commune.nom} (${commune.codeRegion})`,
+        available: true,
+      }));
+
+      setFilterOptions((prev) => ({ ...prev, code_commune: options }));
+    } catch (err) {
+      console.error("Failed to search communes:", err);
+    }
+  }, []);
+
+  // Initialize filter state from URL parameters
+  useEffect(() => {
+    const state = urlParamsToFilterState(searchParams, ALL_FILTERS);
+
+    // For code_commune, add it directly from URL even if validation fails
+    // (options might not be loaded yet)
+    const communeCode = searchParams.get("code_commune");
+    if (communeCode && !state.code_commune) {
+      state.code_commune = communeCode;
+    }
+
+    setFilterState(state);
+  }, [searchParams]);
+
+  // Ensure URL commune is in options
+  useEffect(() => {
+    const communeCode = searchParams.get("code_commune");
+    if (communeCode && filterOptions.code_commune) {
+      const hasCommune = filterOptions.code_commune.some(
+        (opt) => opt.value === communeCode
+      );
+
+      if (!hasCommune) {
+        // Fetch this specific commune by code to add to options
+        fetch(`/api/communes?code=${communeCode}`)
+          .then((res) => res.json())
+          .then(
+            (
+              communes: Array<{ code: string; nom: string; codeRegion: string }>
+            ) => {
+              if (communes.length > 0) {
+                const commune = communes[0];
+                const newOption = {
+                  value: commune.code,
+                  label: `${commune.nom} (${commune.codeRegion})`,
+                  available: true,
+                };
+                setFilterOptions((prev) => ({
+                  ...prev,
+                  code_commune: [newOption, ...(prev.code_commune || [])],
+                }));
+              }
+            }
+          )
+          .catch((err) => console.error("Failed to fetch commune from URL:", err));
       }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, filterOptions.code_commune?.length]);
 
-      // Réinitialiser à la page 1 lors du changement de filtre
-      params.delete("page");
+  // Handle filter change
+  const handleFilterChange = (
+    filterId: string,
+    value: string | number | boolean
+  ) => {
+    const newState = { ...filterState, [filterId]: value };
+    setFilterState(newState);
 
+    // Clear existing debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Debounce URL updates (300ms) to avoid excessive re-renders
+    debounceTimerRef.current = setTimeout(() => {
+      // Update URL with merged filters (include dynamic options)
+      const mergedFilters = ALL_FILTERS.map((filter) => {
+        const cachedOptions = filterOptions[filter.id];
+        return cachedOptions ? { ...filter, options: cachedOptions } : filter;
+      });
+      const params = filterStateToUrlParams(newState, mergedFilters);
+      params.delete("page"); // Reset to page 1 when filters change
       router.push(`/?${params.toString()}`);
     }, 300);
+  };
 
-    return () => clearTimeout(timer);
-  }, [qualityScore, router, searchParams]);
+  // Handle filter clear
+  const handleClearFilter = (filterId: string) => {
+    const newState = { ...filterState };
+    delete newState[filterId];
+    setFilterState(newState);
 
-  const handleSourceChange = (value: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-
-    if (value === "all") {
-      params.delete("sources");
-    } else {
-      params.set("sources", value);
-    }
-
-    // Réinitialiser à la page 1 lors du changement de filtre
+    // Update URL
+    const params = filterStateToUrlParams(newState, ALL_FILTERS);
     params.delete("page");
-
     router.push(`/?${params.toString()}`);
   };
 
-  const handleTypeChange = (value: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-
-    if (value === "all") {
-      params.delete("types");
-    } else {
-      params.set("types", value);
-    }
-
-    // Réinitialiser à la page 1 lors du changement de filtre
-    params.delete("page");
-
-    router.push(`/?${params.toString()}`);
-  };
-
-  const handleFraisChange = (value: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-
-    if (value === "all") {
-      params.delete("frais");
-    } else {
-      params.set("frais", value);
-    }
-
-    // Réinitialiser à la page 1 lors du changement de filtre
-    params.delete("page");
-
-    router.push(`/?${params.toString()}`);
-  };
-
-  const handleCommuneChange = (value: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-
-    if (value) {
-      params.set("code_commune", value);
-    } else {
-      params.delete("code_commune");
-    }
-
-    // Réinitialiser à la page 1 lors du changement de filtre
-    params.delete("page");
-
-    router.push(`/?${params.toString()}`);
+  // Handle reset all filters
+  const handleResetAll = () => {
+    setFilterState({});
+    router.push("/");
   };
 
   return (
-    <div className="sticky top-8 self-start">
-      <h1 className="text-4xl font-bold mb-4">Data Inclusion Explorer</h1>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-8">
-        Explorez les services de l&apos;API Data Inclusion. Filtrez par source
-        de données, commune et score de qualité pour trouver les services qui
-        correspondent à vos besoins.
-      </p>
+    <div className="sticky top-8 self-start space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-4xl font-bold mb-4">Explorateur Data Inclusion</h1>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Explorez les services de l&apos;API Data Inclusion. Utilisez les
+          filtres ci-dessous pour affiner votre recherche.
+        </p>
+      </div>
 
-      <form className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Source de données
-          </label>
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={open}
-                className="w-full justify-between"
-                disabled={loading}
-              >
-                {currentSource === "all"
-                  ? "Toutes les sources"
-                  : sources.find((source) => source.slug === currentSource)
-                      ?.nom || "Sélectionner une source"}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-full p-0">
-              <Command>
-                <CommandInput placeholder="Rechercher une source..." />
-                <CommandList>
-                  <CommandEmpty>Aucune source trouvée.</CommandEmpty>
-                  <CommandGroup>
-                    <CommandItem
-                      value="all"
-                      onSelect={() => {
-                        handleSourceChange("all");
-                        setOpen(false);
-                      }}
-                    >
-                      <Check
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          currentSource === "all" ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                      Toutes les sources
-                    </CommandItem>
-                    {sources.map((source) => (
-                      <CommandItem
-                        key={source.slug}
-                        value={source.slug}
-                        onSelect={(value) => {
-                          handleSourceChange(value);
-                          setOpen(false);
-                        }}
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            currentSource === source.slug
-                              ? "opacity-100"
-                              : "opacity-0"
-                          )}
-                        />
-                        {source.nom}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-          {currentSource !== "all" && (
-            <button
-              type="button"
-              onClick={() => handleSourceChange("all")}
-              className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mt-1"
-            >
-              Réinitialiser
-            </button>
-          )}
+      {/* Error State */}
+      {error && (
+        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         </div>
+      )}
 
-        <div>
-          <label className="block text-sm font-medium mb-2">Type</label>
-          <Popover open={openType} onOpenChange={setOpenType}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={openType}
-                className="w-full justify-between"
-              >
-                {currentType === "all"
-                  ? "Tous les types"
-                  : TYPES.find((type) => type.value === currentType)?.label ||
-                    "Sélectionner un type"}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-full p-0">
-              <Command>
-                <CommandInput placeholder="Rechercher un type..." />
-                <CommandList>
-                  <CommandEmpty>Aucun type trouvé.</CommandEmpty>
-                  <CommandGroup>
-                    <CommandItem
-                      value="all"
-                      onSelect={() => {
-                        handleTypeChange("all");
-                        setOpenType(false);
-                      }}
-                    >
-                      <Check
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          currentType === "all" ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                      Tous les types
-                    </CommandItem>
-                    {TYPES.map((type) => (
-                      <CommandItem
-                        key={type.value}
-                        value={type.value}
-                        onSelect={(value) => {
-                          handleTypeChange(value);
-                          setOpenType(false);
-                        }}
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            currentType === type.value
-                              ? "opacity-100"
-                              : "opacity-0"
-                          )}
-                        />
-                        {type.label}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-          {currentType !== "all" && (
-            <button
-              type="button"
-              onClick={() => handleTypeChange("all")}
-              className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mt-1"
-            >
-              Réinitialiser
-            </button>
-          )}
+      {/* Loading State */}
+      {loading && (
+        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+          <p className="text-sm text-blue-600 dark:text-blue-400">
+            Chargement des filtres...
+          </p>
         </div>
+      )}
 
-        <div>
-          <label className="block text-sm font-medium mb-2">Frais</label>
-          <RadioGroup value={currentFrais} onValueChange={handleFraisChange}>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="all" id="frais-all" />
-              <Label htmlFor="frais-all" className="cursor-pointer">
-                Tous
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="gratuit" id="frais-gratuit" />
-              <Label htmlFor="frais-gratuit" className="cursor-pointer">
-                Gratuit
-              </Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="payant" id="frais-payant" />
-              <Label htmlFor="frais-payant" className="cursor-pointer">
-                Payant
-              </Label>
-            </div>
-          </RadioGroup>
-        </div>
+      {/* Filters */}
+      <div className="space-y-6">
+        {ALL_FILTERS.map((filter) => {
+          const onSearchProp =
+            filter.id === "code_commune" ? handleCommunesSearch : undefined;
+          const cachedOptions = filterOptions[filter.id];
+          const filterToPass = cachedOptions
+            ? { ...filter, options: cachedOptions }
+            : filter;
 
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Score de qualité minimum : {qualityScore[0].toFixed(2)}
-          </label>
-          <Slider
-            value={qualityScore}
-            onValueChange={setQualityScore}
-            min={0}
-            max={1}
-            step={0.01}
-            className="w-full"
-          />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>0.0</span>
-            <span>1.0</span>
-          </div>
-        </div>
+          return (
+            <FilterControl
+              key={filter.id}
+              filter={filterToPass}
+              value={filterState[filter.id] ?? filter.defaultValue}
+              onChange={(value) => handleFilterChange(filter.id, value)}
+              onClear={() => handleClearFilter(filter.id)}
+              onSearch={onSearchProp}
+            />
+          );
+        })}
+      </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-2">Commune</label>
-          <Popover open={openCommune} onOpenChange={setOpenCommune}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={openCommune}
-                className="w-full justify-between"
-              >
-                {currentCommune && selectedCommune
-                  ? `${selectedCommune.nom} (${selectedCommune.code})`
-                  : currentCommune
-                  ? currentCommune
-                  : "Sélectionner une commune"}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-full p-0">
-              <Command shouldFilter={false}>
-                <CommandInput
-                  placeholder="Rechercher une commune..."
-                  value={communeSearch}
-                  onValueChange={setCommuneSearch}
-                />
-                <CommandList>
-                  {communeSearch.length < 2 && (
-                    <CommandEmpty>
-                      Tapez au moins 2 caractères pour rechercher.
-                    </CommandEmpty>
-                  )}
-                  {communeSearch.length >= 2 && loadingCommunes && (
-                    <CommandEmpty>Recherche en cours...</CommandEmpty>
-                  )}
-                  {communeSearch.length >= 2 &&
-                    !loadingCommunes &&
-                    communes.length === 0 && (
-                      <CommandEmpty>Aucune commune trouvée.</CommandEmpty>
-                    )}
-                  {communes.length > 0 && (
-                    <CommandGroup>
-                      {communes.map((commune) => (
-                        <CommandItem
-                          key={commune.code}
-                          value={commune.code}
-                          onSelect={(value) => {
-                            setSelectedCommune(commune);
-                            handleCommuneChange(value);
-                            setOpenCommune(false);
-                            setCommuneSearch("");
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              currentCommune === commune.code
-                                ? "opacity-100"
-                                : "opacity-0"
-                            )}
-                          />
-                          {commune.nom} ({commune.codesPostaux[0]})
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  )}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-          {currentCommune && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCommune(null);
-                handleCommuneChange("");
-              }}
-              className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mt-1"
-            >
-              Réinitialiser
-            </button>
-          )}
-        </div>
-      </form>
+      {/* Reset All Button */}
+      {Object.keys(filterState).length > 0 && (
+        <Button variant="outline" onClick={handleResetAll} className="w-full">
+          Réinitialiser tous les filtres
+        </Button>
+      )}
     </div>
   );
 }
